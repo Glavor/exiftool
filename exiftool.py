@@ -219,7 +219,7 @@ def create_parser() -> SafeArgParser:
     p.add_argument("-f", "--force", action="store_true", help="不进行判断，强制写入 EXIF")
     p.add_argument("-r", "--regex", nargs=2, metavar=("PATTERN", "REPL"), help="正则重命名")
     p.add_argument("-s", "--sequence", nargs=2, metavar=("TIME", "STEP"), help="时间序列重命名")
-    p.add_argument("-o", "--offset", metavar="OFFSET", help="时间偏移 (如: +30m, -2h)")
+    p.add_argument("-o", "--offset", metavar="OFFSET", help="时间偏移 (+30m, -2h) 重命名")
     p.add_argument("-E", "--extract-mv", action="store_true", help="提取 Motion Video")
     p.add_argument("-M", "--clear-mv", action="store_true", help="清除 Motion Video")
     p.add_argument("-C", "--clear", action="store_true", help="清除 EXIF 信息")
@@ -228,34 +228,33 @@ def create_parser() -> SafeArgParser:
 
 
 def preprocess_args(args: list[str]) -> list[str]:
-    """预处理：自动识别中文标题参数及时间偏移参数"""
-    has_title_arg = any(a in ("-t", "--title") or a.startswith("--title=") for a in args)
-    has_offset_arg = any(a in ("-o", "--offset") or a.startswith("--offset=") for a in args)
-    has_sequence_arg = any(a in ("-s", "--sequence") for a in args)
+    """预处理：自动识别中文标题参数、时间偏移参数及时间序列化参数"""
+    _re_seq_value = re.compile(r"now|[0-9\-_]+")
+    _re_title = re.compile(r"[a-zA-Z一-龟,]+")
+    _re_offset = re.compile(r"[+-]?(?:\d+[dhms])+")
 
-    new_args = []
-    i = 0
-    while i < len(args):
+    i, n, new_args = 0, len(args), []
+    while i < n:
         arg = args[i]
+
+        if arg in ["-t", "--title", "-o", "--offset"]:
+            new_args += args[i : i + 2]
+            i += 2
+            continue
 
         if arg in ["-s", "--sequence", "-r", "--regex"]:
             new_args += args[i : i + 3]
             i += 3
             continue
 
-        if not has_sequence_arg and re.fullmatch(r"now|[0-9\-_]+", arg):
-            new_args += ["-s", arg]
-            if i + 1 < len(args) and re.fullmatch(r"[0-9]+", args[i + 1]):
-                new_args.append(args[i + 1])
-                i += 2
-                continue
-            else:
-                new_args.append("2")
-                i += 1
-                continue
-        if not has_title_arg and re.fullmatch(r"[a-zA-Z一-龟,]+", arg):
+        if _re_seq_value.fullmatch(arg):
+            takes_count = i + 1 < n and args[i + 1].isdigit()
+            new_args += ["-s", arg, args[i + 1] if takes_count else "2"]
+            i += 2 if takes_count else 1
+            continue
+        elif _re_title.fullmatch(arg):
             new_args.append("-t")
-        if not has_offset_arg and re.fullmatch(r"[+-]?(\d+[dhms])+", arg):
+        elif _re_offset.fullmatch(arg):
             new_args.append("-o")
 
         new_args.append(arg)
